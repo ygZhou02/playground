@@ -134,6 +134,10 @@ export class Activations {
     output: x => x,
     der: x => 1
   };
+  public static LEAKYRELU: ActivationFunction = {
+    output: x => x <= 0 ? 0.01 * x : x,
+    der: x => x <= 0 ? 0.01 : 1
+  };
 }
 
 /** Build-in regularization functions */
@@ -207,6 +211,7 @@ export function buildNetwork(
     regularization: RegularizationFunction,
     inputIds: string[], initZero?: boolean): Node[][] {
   let numLayers = networkShape.length;
+  console.log(networkShape)
   let id = 1;
   /** List of layers, with each layer being a list of nodes. */
   let network: Node[][] = [];

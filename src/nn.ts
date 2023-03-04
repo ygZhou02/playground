@@ -44,12 +44,15 @@ export class Node {
   numAccumulatedDers = 0;
   /** Activation function that takes total input and returns node's output */
   activation: ActivationFunction;
+  /** Which normalization to use, 0--none, 1--batch norm, 2--layer norm */
+  normalization: number;
 
   /**
    * Creates a new node with the provided id and activation function.
    */
-  constructor(id: string, activation: ActivationFunction, initZero?: boolean) {
+  constructor(id: string, normalization: number, activation: ActivationFunction, initZero?: boolean) {
     this.id = id;
+    this.normalization = normalization;
     this.activation = activation;
     if (initZero) {
       this.bias = 0;
@@ -64,6 +67,8 @@ export class Node {
       let link = this.inputLinks[j];
       this.totalInput += link.weight * link.source.output;
     }
+    // TODO: add batch normalization
+
     this.output = this.activation.output(this.totalInput);
     return this.output;
   }
@@ -152,6 +157,16 @@ export class RegularizationFunction {
   };
 }
 
+//TODO: build normalizations
+
+// /** Build-in normalizations */
+// export class Normalizations {
+//   public static BatchNormalization: Normalizations = {
+//     output: w => Math.abs(w),
+//     der: w => w < 0 ? -1 : (w > 0 ? 1 : 0)
+//   };
+// }
+
 /**
  * A link in a neural network. Each link has a weight and a source and
  * destination node. Also it has an internal state (error derivative
@@ -206,7 +221,7 @@ export class Link {
  * @param inputIds List of ids for the input nodes.
  */
 export function buildNetwork(
-    networkShape: number[], activation: ActivationFunction,
+    networkShape: number[], normalization: number, activation: ActivationFunction,
     outputActivation: ActivationFunction,
     regularization: RegularizationFunction,
     inputIds: string[], initZero?: boolean): Node[][] {
@@ -228,7 +243,7 @@ export function buildNetwork(
       } else {
         id++;
       }
-      let node = new Node(nodeId,
+      let node = new Node(nodeId, normalization,
           isOutputLayer ? outputActivation : activation, initZero);
       currentLayer.push(node);
       if (layerIdx >= 1) {

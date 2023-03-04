@@ -21,6 +21,7 @@ import {
   regDatasets,
   activations,
   problems,
+  norms,
   regularizations,
   getKeyFromValue,
   Problem
@@ -83,6 +84,7 @@ let HIDABLE_CONTROLS = [
   ["Regularization", "regularization"],
   ["Regularization rate", "regularizationRate"],
   ["Problem type", "problem"],
+  ["Normalization", "normalization"],
   ["Which dataset", "dataset"],
   ["Ratio train data", "percTrainData"],
   ["Noise level", "noise"],
@@ -328,6 +330,13 @@ function makeGUI() {
   });
   activationDropdown.property("value",
       getKeyFromValue(activations, state.activation));
+
+  let normalization = d3.select("#normalization").on("change", function() {
+    state.normalization = norms[this.value];
+    parametersChanged = true;
+    reset();
+  });
+  normalization.property("value", getKeyFromValue(norms, state.normalization));
 
   let learningRate = d3.select("#learningRate").on("change", function() {
     state.learningRate = +this.value;
@@ -919,6 +928,9 @@ function oneStep(): void {
   // Compute the loss.
   lossTrain = getLoss(network, trainData);
   lossTest = getLoss(network, testData);
+  if (lossTest < 0.02 && lossTest > 0.019) {
+    console.log(iter);
+  }
   updateUI();
 }
 
@@ -955,7 +967,7 @@ function reset(onStartup=false) {
   let shape = [numInputs].concat(state.networkShape).concat([1]);
   let outputActivation = (state.problem === Problem.REGRESSION) ?
       nn.Activations.LINEAR : nn.Activations.TANH;
-  network = nn.buildNetwork(shape, state.activation, outputActivation,
+  network = nn.buildNetwork(shape, state.normalization, state.activation, outputActivation,
       state.regularization, constructInputIds(), state.initZero);
   lossTrain = getLoss(network, trainData);
   lossTest = getLoss(network, testData);

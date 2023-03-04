@@ -19,7 +19,7 @@ import * as dataset from "./dataset";
 /** Suffix added to the state when storing if a control is hidden or not. */
 const HIDE_STATE_SUFFIX = "_hide";
 
-/** A map between names and activation functions. */
+/** A map between names and activ ation functions. */
 export let activations: {[key: string]: nn.ActivationFunction} = {
   "relu": nn.Activations.RELU,
   "tanh": nn.Activations.TANH,
@@ -90,9 +90,19 @@ export enum Problem {
   REGRESSION
 }
 
+export enum Norm {
+  NONE,
+  BATCHNORM
+}
+
 export let problems = {
   "classification": Problem.CLASSIFICATION,
   "regression": Problem.REGRESSION
+};
+
+export let norms = {
+  "none": Norm.NONE,
+  "batchnorm": Norm.BATCHNORM
 };
 
 export interface Property {
@@ -130,6 +140,7 @@ export class State {
     {name: "collectStats", type: Type.BOOLEAN},
     {name: "tutorial", type: Type.STRING},
     {name: "problem", type: Type.OBJECT, keyMap: problems},
+    {name: "normalization", type: Type.OBJECT, keyMap: norms},
     {name: "initZero", type: Type.BOOLEAN},
     {name: "hideText", type: Type.BOOLEAN}
   ];
@@ -146,6 +157,7 @@ export class State {
   activation = nn.Activations.TANH;
   regularization: nn.RegularizationFunction = null;
   problem = Problem.CLASSIFICATION;
+  normalization = Norm.NONE;
   initZero = false;
   hideText = false;
   collectStats = false;

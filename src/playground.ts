@@ -832,9 +832,11 @@ function updateDecisionBoundary(network: nn.Node[][], firstTime: boolean) {
       let x = xScale(i);
       let y = yScale(j);
       let input = constructInput(x, y);
-      nn.forwardProp(network, input);
+      let inputs:number[][] = [[]]
+      inputs[0] = input
+      nn.forwardProp(network, inputs);
       nn.forEachNode(network, true, node => {
-        boundary[node.id][i][j] = node.output;
+        boundary[node.id][i][j] = node.output[0];
       });
       if (firstTime) {
         // Go through all predefined inputs.
@@ -851,8 +853,10 @@ function getLoss(network: nn.Node[][], dataPoints: Example2D[]): number {
   for (let i = 0; i < dataPoints.length; i++) {
     let dataPoint = dataPoints[i];
     let input = constructInput(dataPoint.x, dataPoint.y);
-    let output = nn.forwardProp(network, input);
-    loss += nn.Errors.SQUARE.error(output, dataPoint.label);
+    let inputs:number[][] = [[]]
+    inputs[0] = input
+    let output = nn.forwardProp(network, inputs);
+    loss += nn.Errors.SQUARE.error(output[0], dataPoint.label);
   }
   return loss / dataPoints.length;
 }
@@ -917,17 +921,26 @@ function constructInput(x: number, y: number): number[] {
 
 function oneStep(): void {
   iter++;
+  let batch = [];
+  let label = [];
   trainData.forEach((point, i) => {
     let input = constructInput(point.x, point.y);
-    nn.forwardProp(network, input);
-    nn.backProp(network, point.label, nn.Errors.SQUARE);
+    batch.push(input)
+    label.push(point.label)
     if ((i + 1) % state.batchSize === 0) {
+      console.log("iteration"+i.toString());
+      nn.forwardProp(network, batch);
+      nn.backProp(network, label, nn.Errors.SQUARE);
       nn.updateWeights(network, state.learningRate, state.regularizationRate);
+      batch = []
+      label = []
     }
   });
   // Compute the loss.
   lossTrain = getLoss(network, trainData);
   lossTest = getLoss(network, testData);
+  // console.log(lossTrain, lossTest)
+  // When lossTest == 0.02, show the current iteration, which symbolizes how fast the network converges.
   if (lossTest < 0.02 && lossTest > 0.019) {
     console.log(iter);
   }

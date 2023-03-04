@@ -25,18 +25,18 @@ export class Node {
   bias = 0.1;
   /** List of output links. */
   outputs: Link[] = [];
-  totalInput: number;
-  output: number;
+  totalInput: number[];
+  output: number[];
   /** Error derivative with respect to this node's output. */
-  outputDer = 0;
+  outputDer: number[] = [];
   /** Error derivative with respect to this node's total input. */
-  inputDer = 0;
+  inputDer: number[] = [];
   /**
    * Accumulated error derivative with respect to this node's total input since
    * the last update. This derivative equals dE/db where b is the node's
    * bias term.
    */
-  accInputDer = 0;
+  accInputDer:number = 0;
   /**
    * Number of accumulated err. derivatives with respect to the total input
    * since the last update.
@@ -60,16 +60,21 @@ export class Node {
   }
 
   /** Recomputes the node's output and returns it. */
-  updateOutput(): number {
+  updateOutput(): number[] {
     // Stores total input into the node.
-    this.totalInput = this.bias;
-    for (let j = 0; j < this.inputLinks.length; j++) {
-      let link = this.inputLinks[j];
-      this.totalInput += link.weight * link.source.output;
+    // batch size = this.inputLinks[0].source.output.length
+    this.totalInput = new Array(this.inputLinks[0].source.output.length);
+    this.output = new Array(this.inputLinks[0].source.output.length);
+    for(let i=0; i<this.inputLinks[0].source.output.length; i++){
+      this.totalInput[i] = this.bias;
+      for (let j = 0; j < this.inputLinks.length; j++) {
+        let link = this.inputLinks[j];
+        this.totalInput[i] += link.weight * link.source.output[i];
+      }
+      this.output[i] = this.activation.output(this.totalInput[i]);
     }
     // TODO: add batch normalization
 
-    this.output = this.activation.output(this.totalInput);
     return this.output;
   }
 }
@@ -180,7 +185,7 @@ export class Link {
   weight = Math.random() - 0.5;
   isDead = false;
   /** Error derivative with respect to this weight. */
-  errorDer = 0;
+  errorDer: number[] = [];
   /** Accumulated error derivative since the last update. */
   accErrorDer = 0;
   /** Number of accumulated derivatives since the last update. */
@@ -270,16 +275,20 @@ export function buildNetwork(
  *     nodes in the network.
  * @return The final output of the network.
  */
-export function forwardProp(network: Node[][], inputs: number[]): number {
+export function forwardProp(network: Node[][], batch: number[][]): number[] {
   let inputLayer = network[0];
-  if (inputs.length !== inputLayer.length) {
+  if (batch[0].length !== inputLayer.length) {
     throw new Error("The number of inputs must match the number of nodes in" +
         " the input layer");
   }
   // Update the input layer.
   for (let i = 0; i < inputLayer.length; i++) {
     let node = inputLayer[i];
-    node.output = inputs[i];
+    let dim1 = [];
+    for(let j=0; j<batch.length; j++){
+      dim1.push(batch[j][i])
+    }
+    node.output = dim1;
   }
   for (let layerIdx = 1; layerIdx < network.length; layerIdx++) {
     let currentLayer = network[layerIdx];
@@ -299,13 +308,17 @@ export function forwardProp(network: Node[][], inputs: number[]): number {
  * derivatives with respect to each node, and each weight
  * in the network.
  */
-export function backProp(network: Node[][], target: number,
+export function backProp(network: Node[][], target: number[],
     errorFunc: ErrorFunction): void {
   // The output node is a special case. We use the user-defined error
   // function for the derivative.
   let outputNode = network[network.length - 1][0];
-  outputNode.outputDer = errorFunc.der(outputNode.output, target);
-
+  outputNode.outputDer = []
+  // accumulate all derivatives
+  outputNode.outputDer.push(errorFunc.der(outputNode.output[0], target[0]));
+  for(let i=1; i<outputNode.output.length; i++){
+    outputNode.outputDer.push(errorFunc.der(outputNode.output[i], target[i]));
+  }
   // Go through the layers backwards.
   for (let layerIdx = network.length - 1; layerIdx >= 1; layerIdx--) {
     let currentLayer = network[layerIdx];
@@ -314,9 +327,16 @@ export function backProp(network: Node[][], target: number,
     // 2) each of its input weights.
     for (let i = 0; i < currentLayer.length; i++) {
       let node = currentLayer[i];
-      node.inputDer = node.outputDer * node.activation.der(node.totalInput);
-      node.accInputDer += node.inputDer;
+      // accumulate all derivatives
+      node.inputDer = new Array(node.totalInput.length);
+      node.inputDer[0] = node.outputDer[0] * node.activation.der(node.totalInput[0]);
       node.numAccumulatedDers++;
+      node.accInputDer = node.inputDer[0];
+      for(let j=1; j<node.totalInput.length; j++){
+        node.inputDer[j] = node.outputDer[j] * node.activation.der(node.totalInput[j]);
+        node.numAccumulatedDers++;
+        node.accInputDer += node.inputDer[j];
+      }
     }
 
     // Error derivative with respect to each weight coming into the node.
@@ -325,11 +345,17 @@ export function backProp(network: Node[][], target: number,
       for (let j = 0; j < node.inputLinks.length; j++) {
         let link = node.inputLinks[j];
         if (link.isDead) {
+          console.log("link is dead!!!")
           continue;
         }
-        link.errorDer = node.inputDer * link.source.output;
-        link.accErrorDer += link.errorDer;
+        link.errorDer[0] = node.inputDer[0] * link.source.output[0];
         link.numAccumulatedDers++;
+        link.accErrorDer += link.errorDer[0];
+        for(let k=1; k<link.source.output.length; k++){
+          link.errorDer[k] = node.inputDer[k] * link.source.output[k];
+          link.numAccumulatedDers++;
+          link.accErrorDer += link.errorDer[k];
+        }
       }
     }
     if (layerIdx === 1) {
@@ -339,10 +365,14 @@ export function backProp(network: Node[][], target: number,
     for (let i = 0; i < prevLayer.length; i++) {
       let node = prevLayer[i];
       // Compute the error derivative with respect to each node's output.
-      node.outputDer = 0;
-      for (let j = 0; j < node.outputs.length; j++) {
-        let output = node.outputs[j];
-        node.outputDer += output.weight * output.dest.inputDer;
+      node.outputDer = new Array(outputNode.outputDer.length);
+
+      for (let k=0; k<outputNode.outputDer.length; k++){
+        node.outputDer[k] = 0
+        for (let j = 0; j < node.outputs.length; j++) {
+          let output = node.outputs[j];
+          node.outputDer[k] += output.weight * output.dest.inputDer[k];
+        }
       }
     }
   }

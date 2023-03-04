@@ -71,10 +71,24 @@ export class Node {
         let link = this.inputLinks[j];
         this.totalInput[i] += link.weight * link.source.output[i];
       }
-      this.output[i] = this.activation.output(this.totalInput[i]);
     }
-    // TODO: add batch normalization
+    let sample_mean: number;
+    let sample_var: number;
+    if(this.normalization === 1) {
+      sample_mean = getMean(this.totalInput);
+      sample_var = getVar(this.totalInput, sample_mean);
+    }
 
+    for(let i=0; i<this.inputLinks[0].source.output.length; i++){
+      if(this.normalization === 1) {
+        let totalinput_hat = (this.totalInput[i] - sample_mean) / (Math.sqrt(1e-5 + sample_var))
+        // TODO: to be modified
+        this.output[i] = this.activation.output(this.totalInput[i]);
+      }
+      else if(this.normalization === 0){
+        this.output[i] = this.activation.output(this.totalInput[i]);
+      }
+    }
     return this.output;
   }
 }
@@ -211,6 +225,26 @@ export class Link {
     }
   }
 }
+
+
+export function getMean(batch: number[]){
+  let sum = 0;
+  for(let i=0; i<batch.length; i++){
+    sum += batch[i];
+  }
+  return sum / batch.length;
+}
+
+export function getVar(batch: number[], mean: number){
+  let sum = 0;
+  for(let i=0; i<batch.length; i++){
+    sum += (batch[i] - mean) * (batch[i] - mean);
+  }
+  // Unbiased estimate.
+  return sum / (batch.length - 1);
+}
+
+
 
 /**
  * Builds a neural network.

@@ -25,8 +25,10 @@ export class Node {
   bias = 0.1;
   /** List of output links. */
   outputs: Link[] = [];
-  totalInput: number[];
-  output: number[];
+  totalInput: number[];     //x_i;
+  totalInputHat: number[];     //x^_i
+  totalInputHatAfterGamma: number[];     //y^_i
+  output: number[];         // Activate(y_i)
   /** Error derivative with respect to this node's output. */
   outputDer: number[] = [];
   /** Error derivative with respect to this node's total input. */
@@ -46,6 +48,15 @@ export class Node {
   activation: ActivationFunction;
   /** Which normalization to use, 0--none, 1--batch norm, 2--layer norm */
   normalization: number;
+  /** batch normalization affine factor*/
+  gamma: number;
+  dgamma: number;
+  beta: number;
+  dbeta: number;
+  running_mean = 0.0;
+  running_var = 1.0;
+  momentum: number;
+  cache = [];
 
   /**
    * Creates a new node with the provided id and activation function.
@@ -57,35 +68,70 @@ export class Node {
     if (initZero) {
       this.bias = 0;
     }
+    if(this.normalization === 1){
+      this.gamma = 1.0;
+      this.beta = 0.0;
+      this.running_mean = 0.0;
+      this.running_var = 1.0;
+      this.momentum = 0.9;
+    }
+    this.cache = [];
   }
 
   /** Recomputes the node's output and returns it. */
   updateOutput(): number[] {
     // Stores total input into the node.
-    // batch size = this.inputLinks[0].source.output.length
-    this.totalInput = new Array(this.inputLinks[0].source.output.length);
-    this.output = new Array(this.inputLinks[0].source.output.length);
-    for(let i=0; i<this.inputLinks[0].source.output.length; i++){
+    // This function will never act on the first layer.
+    let batch_size = this.inputLinks[0].source.output.length;
+    this.totalInput = new Array(batch_size);
+    this.output = new Array(batch_size);
+    for(let i=0; i<batch_size; i++){
       this.totalInput[i] = this.bias;
       for (let j = 0; j < this.inputLinks.length; j++) {
         let link = this.inputLinks[j];
         this.totalInput[i] += link.weight * link.source.output[i];
       }
     }
-    let sample_mean: number;
-    let sample_var: number;
+    let sample_mean = 0;
+    let sample_var = 0;
     if(this.normalization === 1) {
       sample_mean = getMean(this.totalInput);
+      // Unbiased estimation
       sample_var = getVar(this.totalInput, sample_mean);
+      // Only update running mean and running var on training mode.
+      if(batch_size > 1){
+        // Due to the huge computational cost to compute the average and mean of whole training dataset,
+        // we estimate mean and variance by momentum mechanism.
+        this.running_mean = this.momentum * this.running_mean + (1 - this.momentum) * sample_mean;
+        this.running_var = this.momentum * this.running_var + (1 - this.momentum) * batch_size / Math.max(batch_size - 1, 1) * sample_var;
+      }
     }
 
-    for(let i=0; i<this.inputLinks[0].source.output.length; i++){
+    if(this.normalization === 1) {
+      this.totalInputHat = new Array(batch_size);
+      this.totalInputHatAfterGamma = new Array(batch_size);
+    }
+
+    // calculate outputs by sample.
+    for(let i=0; i<batch_size; i++){
       if(this.normalization === 1) {
-        let totalinput_hat = (this.totalInput[i] - sample_mean) / (Math.sqrt(1e-5 + sample_var))
-        // TODO: to be modified
-        this.output[i] = this.activation.output(this.totalInput[i]);
+        // execute batch normalization
+        if(batch_size === 1){
+          // Inference mode
+          this.totalInputHat[i] = (this.totalInput[i] - this.running_mean) / (Math.sqrt(1e-5 + this.running_var))
+          this.totalInputHatAfterGamma[i] = this.gamma * this.totalInputHat[i] + this.beta;
+          this.output[i] = this.activation.output(this.totalInputHatAfterGamma[i]);
+        }
+        else{
+          // batch size > 1 means training mode
+          this.totalInputHat[i] = (this.totalInput[i] - sample_mean) / (Math.sqrt(1e-5 + sample_var))
+          this.totalInputHatAfterGamma[i] = this.gamma * this.totalInputHat[i] + this.beta;
+          this.output[i] = this.activation.output(this.totalInputHatAfterGamma[i]);
+          this.cache = [this.totalInputHat, sample_mean, sample_var];
+        }
       }
       else if(this.normalization === 0){
+        // no normalization
         this.output[i] = this.activation.output(this.totalInput[i]);
       }
     }
@@ -176,16 +222,6 @@ export class RegularizationFunction {
   };
 }
 
-//TODO: build normalizations
-
-// /** Build-in normalizations */
-// export class Normalizations {
-//   public static BatchNormalization: Normalizations = {
-//     output: w => Math.abs(w),
-//     der: w => w < 0 ? -1 : (w > 0 ? 1 : 0)
-//   };
-// }
-
 /**
  * A link in a neural network. Each link has a weight and a source and
  * destination node. Also it has an internal state (error derivative
@@ -240,8 +276,8 @@ export function getVar(batch: number[], mean: number){
   for(let i=0; i<batch.length; i++){
     sum += (batch[i] - mean) * (batch[i] - mean);
   }
-  // Unbiased estimate.
-  return sum / (batch.length - 1);
+  // Biased estimate.
+  return sum / batch.length;
 }
 
 
@@ -347,10 +383,11 @@ export function backProp(network: Node[][], target: number[],
   // The output node is a special case. We use the user-defined error
   // function for the derivative.
   let outputNode = network[network.length - 1][0];
-  outputNode.outputDer = []
+  let batch_size = target.length;
+  outputNode.outputDer = []    // outputDer = partial loss / partial Activate(y_i)
   // accumulate all derivatives
   outputNode.outputDer.push(errorFunc.der(outputNode.output[0], target[0]));
-  for(let i=1; i<outputNode.output.length; i++){
+  for(let i=1; i<batch_size; i++){
     outputNode.outputDer.push(errorFunc.der(outputNode.output[i], target[i]));
   }
   // Go through the layers backwards.
@@ -362,14 +399,49 @@ export function backProp(network: Node[][], target: number[],
     for (let i = 0; i < currentLayer.length; i++) {
       let node = currentLayer[i];
       // accumulate all derivatives
-      node.inputDer = new Array(node.totalInput.length);
-      node.inputDer[0] = node.outputDer[0] * node.activation.der(node.totalInput[0]);
-      node.numAccumulatedDers++;
-      node.accInputDer = node.inputDer[0];
-      for(let j=1; j<node.totalInput.length; j++){
+      node.inputDer = new Array(batch_size);   // inputDer = partial loss / partial y_i (x_i)
+      node.numAccumulatedDers = batch_size;
+      node.accInputDer = 0;     // accInputDer = partial loss / partial b
+      for(let j=0; j<batch_size; j++){
+        // node.inputDer[i] = partial loss / partial y_i
         node.inputDer[j] = node.outputDer[j] * node.activation.der(node.totalInput[j]);
-        node.numAccumulatedDers++;
-        node.accInputDer += node.inputDer[j];
+        node.accInputDer += node.inputDer[j];     // accInputDer = partial loss / partial b
+      }
+
+      if(node.normalization === 1){
+        // batch normalization backpropagation
+        let xhat = node.cache[0];
+        let gamma = node.gamma;
+        let mean = node.cache[1];
+        let variance = node.cache[2];
+        // xmu = x - u_B
+        let xmu = new Array(batch_size);
+        // dxhat = partial loss / partial x^
+        let dxhat = new Array(batch_size);
+        // dvar = partial loss / partial variance
+        let dvar = 0;
+        for(let k=0; k<batch_size; k++){
+          xmu[k] = node.totalInput[k] - mean;
+          dxhat[k] = node.inputDer[k] * gamma;
+          dvar += dxhat[k] * xmu[k];
+        }
+        dvar *= (-0.5 / Math.sqrt(variance + 1e-5) / (variance + 1e-5));
+        // dmean = partial loss / partial u_B
+        let dmean = 0;
+        for(let k=0; k<batch_size; k++){
+          dmean += (-dxhat[k] / Math.sqrt(variance + 1e-5)); // + dvar / batch_size * (-2) * xmu[k]);
+        }
+        node.dbeta = node.accInputDer;
+        node.dgamma = 0;
+        for(let k=0; k<batch_size; k++){
+          node.dgamma += node.inputDer[k] * xhat[k];
+        }
+        node.accInputDer = 0;
+        for(let k=0; k<batch_size; k++){
+          // node.inputDer[i] = partial loss / partial x_i
+          node.inputDer[k] = dxhat[k] / Math.sqrt(variance + 1e-5) + 2.0 * dvar * xmu[k] / batch_size + dmean / batch_size;
+          node.accInputDer += node.inputDer[k];
+        }
       }
     }
 
@@ -379,15 +451,13 @@ export function backProp(network: Node[][], target: number[],
       for (let j = 0; j < node.inputLinks.length; j++) {
         let link = node.inputLinks[j];
         if (link.isDead) {
-          console.log("link is dead!!!")
+          console.log("The link is dead!!!")
           continue;
         }
-        link.errorDer[0] = node.inputDer[0] * link.source.output[0];
-        link.numAccumulatedDers++;
-        link.accErrorDer += link.errorDer[0];
-        for(let k=1; k<link.source.output.length; k++){
+        link.numAccumulatedDers = batch_size;
+        link.accErrorDer = 0;     // accErrorDer = partial loss / partial W
+        for(let k=0; k<batch_size; k++){
           link.errorDer[k] = node.inputDer[k] * link.source.output[k];
-          link.numAccumulatedDers++;
           link.accErrorDer += link.errorDer[k];
         }
       }
@@ -399,8 +469,7 @@ export function backProp(network: Node[][], target: number[],
     for (let i = 0; i < prevLayer.length; i++) {
       let node = prevLayer[i];
       // Compute the error derivative with respect to each node's output.
-      node.outputDer = new Array(outputNode.outputDer.length);
-
+      node.outputDer = new Array(outputNode.outputDer.length);   // partial loss / partial in_layer
       for (let k=0; k<outputNode.outputDer.length; k++){
         node.outputDer[k] = 0
         for (let j = 0; j < node.outputs.length; j++) {
@@ -418,6 +487,12 @@ export function backProp(network: Node[][], target: number[],
  */
 export function updateWeights(network: Node[][], learningRate: number,
     regularizationRate: number) {
+
+  //TODO: rectify backpropagation and gradient update!
+  // why the model will break down upon it reaches the best answer?
+  // observe how the model behaves near the local minimum.
+
+
   for (let layerIdx = 1; layerIdx < network.length; layerIdx++) {
     let currentLayer = network[layerIdx];
     for (let i = 0; i < currentLayer.length; i++) {
@@ -426,7 +501,10 @@ export function updateWeights(network: Node[][], learningRate: number,
       if (node.numAccumulatedDers > 0) {
         node.bias -= learningRate * node.accInputDer / node.numAccumulatedDers;
         node.accInputDer = 0;
-        node.numAccumulatedDers = 0;
+      }
+      if(node.normalization === 1){
+        node.gamma -= learningRate * node.dgamma / node.numAccumulatedDers;
+        node.beta -= learningRate * node.dbeta / node.numAccumulatedDers;
       }
       // Update the weights coming into this node.
       for (let j = 0; j < node.inputLinks.length; j++) {

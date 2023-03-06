@@ -501,10 +501,12 @@ export function updateWeights(network: Node[][], learningRate: number,
       if (node.numAccumulatedDers > 0) {
         node.bias -= learningRate * node.accInputDer / node.numAccumulatedDers;
         node.accInputDer = 0;
-      }
-      if(node.normalization === 1){
-        node.gamma -= learningRate * node.dgamma / node.numAccumulatedDers;
-        node.beta -= learningRate * node.dbeta / node.numAccumulatedDers;
+        if(node.normalization === 1){
+          node.gamma -= learningRate * node.dgamma / node.numAccumulatedDers;
+          node.beta -= learningRate * node.dbeta / node.numAccumulatedDers;
+          node.dbeta = 0;
+          node.dgamma = 0;
+        }
       }
       // Update the weights coming into this node.
       for (let j = 0; j < node.inputLinks.length; j++) {

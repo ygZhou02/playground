@@ -46,6 +46,10 @@ export class Node {
   activation: ActivationFunction;
   /** Which normalization to use, 0--none, 1--batch norm, 2--layer norm */
   normalization: number;
+  /** Biased first moment estimate of bias. */
+  m_t = 0;
+  /** Biased second raw moment estimate of bias. */
+  v_t = 0;
 
   /**
    * Creates a new node with the provided id and activation function.
@@ -74,6 +78,44 @@ export class Node {
       this.output[i] = this.activation.output(this.totalInput[i]);
     }
     return this.output;
+  }
+}
+
+/** Build-in optimization functions */
+class Optimizer {
+  private static SGD(param: any, lr: number){
+    if (param instanceof Node)
+      param.bias -= lr * param.accInputDer / param.numAccumulatedDers;
+    else
+      param.weight -= lr * param.accErrorDer / param.numAccumulatedDers;
+  }
+
+  private static Adam(param: any, lr: number, iter: number){
+    let beta1 = 0.9;
+    let beta2 = 0.999;
+    let g: number;
+    let m_hat: number;
+    let v_hat: number;
+
+    if (param instanceof Node)
+      g = param.accInputDer / param.numAccumulatedDers;
+    else
+      g = param.accErrorDer / param.numAccumulatedDers;
+    param.m_t = beta1 * param.m_t + (1 - beta1) * g;
+    param.v_t = beta2 * param.v_t + (1 - beta2) * g * g;
+    m_hat = param.m_t / (1 - Math.pow(beta1, iter));
+    v_hat = param.v_t / (1 - Math.pow(beta2, iter));
+    if (param instanceof Node)
+      param.bias -= lr * m_hat / (Math.pow(v_hat, 0.5) + 1e-8);
+    else
+      param.weight -= lr * m_hat / (Math.pow(v_hat, 0.5) + 1e-8);
+  }
+
+  public static step(optimizer_id: number, param: any, lr: number, iter: number){
+    if (optimizer_id == 0)
+      this.SGD(param, lr)
+    else
+      this.Adam(param, lr, iter)
   }
 }
 
@@ -179,6 +221,10 @@ export class Link {
   /** Number of accumulated derivatives since the last update. */
   numAccumulatedDers = 0;
   regularization: RegularizationFunction;
+  /** Biased first moment estimate of bias. */
+  m_t = 0;
+  /** Biased second raw moment estimate of bias. */
+  v_t = 0;
 
   /**
    * Constructs a link in the neural network initialized with random weight.
@@ -366,14 +412,15 @@ export function backProp(network: Node[][], target: number[],
  * derivatives.
  */
 export function updateWeights(network: Node[][], learningRate: number,
-    regularizationRate: number) {
+    regularizationRate: number, optimization: number, iter: number) {
   for (let layerIdx = 1; layerIdx < network.length; layerIdx++) {
     let currentLayer = network[layerIdx];
     for (let i = 0; i < currentLayer.length; i++) {
       let node = currentLayer[i];
       // Update the node's bias.
       if (node.numAccumulatedDers > 0) {
-        node.bias -= learningRate * node.accInputDer / node.numAccumulatedDers;
+        //node.bias -= learningRate * node.accInputDer / node.numAccumulatedDers;
+        Optimizer.step(optimization, node, learningRate, iter);
         node.accInputDer = 0;
         node.numAccumulatedDers = 0;
       }
@@ -387,8 +434,7 @@ export function updateWeights(network: Node[][], learningRate: number,
             link.regularization.der(link.weight) : 0;
         if (link.numAccumulatedDers > 0) {
           // Update the weight based on dE/dw.
-          link.weight = link.weight -
-              (learningRate / link.numAccumulatedDers) * link.accErrorDer;
+          Optimizer.step(optimization, link, learningRate, iter);
           // Further update the weight based on regularization.
           let newLinkWeight = link.weight -
               (learningRate * regularizationRate) * regulDer;

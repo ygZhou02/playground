@@ -116,6 +116,7 @@ export class State {
 
   private static PROPS: Property[] = [
     {name: "activation", type: Type.OBJECT, keyMap: activations},
+    {name: "optimization", type: Type.NUMBER},
     {name: "regularization", type: Type.OBJECT, keyMap: regularizations},
     {name: "batchSize", type: Type.NUMBER},
     {name: "dataset", type: Type.OBJECT, keyMap: datasets},
@@ -154,7 +155,8 @@ export class State {
   discretize = false;
   tutorial: string = null;
   percTrainData = 50;
-  activation = nn.Activations.TANH;
+  activation = nn.Activations.RELU;
+  optimization = 0;
   regularization: nn.RegularizationFunction = null;
   problem = Problem.CLASSIFICATION;
   normalization = Norm.NONE;

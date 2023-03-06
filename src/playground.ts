@@ -81,6 +81,7 @@ let HIDABLE_CONTROLS = [
   ["Reset button", "resetButton"],
   ["Learning rate", "learningRate"],
   ["Activation", "activation"],
+  ["Optimizer", "optimization"],
   ["Regularization", "regularization"],
   ["Regularization rate", "regularizationRate"],
   ["Problem type", "problem"],
@@ -330,6 +331,13 @@ function makeGUI() {
   });
   activationDropdown.property("value",
       getKeyFromValue(activations, state.activation));
+
+  let optimiation = d3.select("#optimization").on("change", function() {
+    state.optimization = +this.value;
+    parametersChanged = true;
+    reset();
+  });
+  optimiation.property("value", state.optimization);
 
   let normalization = d3.select("#normalization").on("change", function() {
     state.normalization = norms[this.value];
@@ -928,10 +936,10 @@ function oneStep(): void {
     batch.push(input)
     label.push(point.label)
     if ((i + 1) % state.batchSize === 0) {
-      console.log("iteration"+i.toString());
+      // console.log("iteration"+i.toString());
       nn.forwardProp(network, batch);
       nn.backProp(network, label, nn.Errors.SQUARE);
-      nn.updateWeights(network, state.learningRate, state.regularizationRate);
+      nn.updateWeights(network, state.learningRate, state.regularizationRate, state.optimization, iter);
       batch = []
       label = []
     }

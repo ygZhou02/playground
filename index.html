@@ -111,6 +111,16 @@ limitations under the License.
           </select>
         </div>
       </div>
+      <div class="control ui-normalization">
+        <label for="normalization">Normalization</label>
+        <div class="select">
+          <select id="normalization">
+            <option value="0">None</option>
+            <option value="1">BatchNorm</option>
+            <option value="2">LayerNorm</option>
+          </select>
+        </div>
+      </div>
       <div class="control ui-regularization">
         <label for="regularizations">Regularization</label>
         <div class="select">
@@ -144,15 +154,6 @@ limitations under the License.
           <select id="problem">
             <option value="classification">Classification</option>
             <option value="regression">Regression</option>
-          </select>
-        </div>
-      </div>
-      <div class="control ui-normalization">
-        <label for="normalization">Normalization</label>
-        <div class="select">
-          <select id="normalization">
-            <option value="none">None</option>
-            <option value="batchnorm">Batch norm</option>
           </select>
         </div>
       </div>

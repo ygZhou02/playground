@@ -21,7 +21,6 @@ import {
   regDatasets,
   activations,
   problems,
-  norms,
   regularizations,
   getKeyFromValue,
   Problem
@@ -340,11 +339,11 @@ function makeGUI() {
   optimiation.property("value", state.optimization);
 
   let normalization = d3.select("#normalization").on("change", function() {
-    state.normalization = norms[this.value];
+    state.normalization = +this.value;
     parametersChanged = true;
     reset();
   });
-  normalization.property("value", getKeyFromValue(norms, state.normalization));
+  normalization.property("value", state.normalization);
 
   let learningRate = d3.select("#learningRate").on("change", function() {
     state.learningRate = +this.value;

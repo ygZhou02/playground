@@ -100,11 +100,6 @@ export let problems = {
   "regression": Problem.REGRESSION
 };
 
-export let norms = {
-  "none": Norm.NONE,
-  "batchnorm": Norm.BATCHNORM
-};
-
 export interface Property {
   name: string;
   type: Type;
@@ -141,7 +136,7 @@ export class State {
     {name: "collectStats", type: Type.BOOLEAN},
     {name: "tutorial", type: Type.STRING},
     {name: "problem", type: Type.OBJECT, keyMap: problems},
-    {name: "normalization", type: Type.OBJECT, keyMap: norms},
+    {name: "normalization", type: Type.NUMBER},
     {name: "initZero", type: Type.BOOLEAN},
     {name: "hideText", type: Type.BOOLEAN}
   ];
@@ -159,7 +154,7 @@ export class State {
   optimization = 0;
   regularization: nn.RegularizationFunction = null;
   problem = Problem.CLASSIFICATION;
-  normalization = Norm.NONE;
+  normalization = 0;
   initZero = false;
   hideText = false;
   collectStats = false;

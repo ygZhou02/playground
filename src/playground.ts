@@ -935,7 +935,6 @@ function oneStep(): void {
     batch.push(input)
     label.push(point.label)
     if ((i + 1) % state.batchSize === 0) {
-      // console.log("iteration"+i.toString());
       nn.forwardProp(network, batch);
       nn.backProp(network, label, nn.Errors.SQUARE);
       nn.updateWeights(network, state.learningRate, state.regularizationRate, state.optimization, iter);
@@ -947,8 +946,8 @@ function oneStep(): void {
   lossTrain = getLoss(network, trainData);
   lossTest = getLoss(network, testData);
   // console.log(lossTrain, lossTest)
-  // When lossTest == 0.02, show the current iteration, which symbolizes how fast the network converges.
   if (lossTest < 0.02 && lossTest > 0.019) {
+  // When lossTest == 0.02, show the current iteration, which symbolizes how fast the network converges.
     console.log(iter);
   }
   updateUI();

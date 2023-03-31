@@ -13,6 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+
 /**
  * A node in a neural network. Each node has a state
  * (total input, output, and their respectively derivatives) which changes
@@ -50,6 +51,8 @@ export class Node {
   m_t = 0;
   /** Biased second raw moment estimate of bias. */
   v_t = 0;
+  /** Normalization layer */
+  normlayer: LayerNormalization;
 
   /**
    * Creates a new node with the provided id and activation function.
@@ -73,7 +76,12 @@ export class Node {
       this.totalInput[i] = this.bias;
       for (let j = 0; j < this.inputLinks.length; j++) {
         let link = this.inputLinks[j];
-        this.totalInput[i] += link.weight * link.source.output[i];
+        if (this.normalization === 2 && link.source.normlayer !== undefined) {
+          this.totalInput[i] += link.weight * link.source.normlayer.output[j][i];
+        }
+        else{
+          this.totalInput[i] += link.weight * link.source.output[i];
+        }
       }
       this.output[i] = this.activation.output(this.totalInput[i]);
     }
@@ -116,6 +124,136 @@ class Optimizer {
       this.SGD(param, lr)
     else
       this.Adam(param, lr, iter)
+  }
+}
+
+function deepCopy(obj) {
+    var copy;
+
+    // Handle the 3 simple types, and null or undefined
+    if (null == obj || "object" != typeof obj) return obj;
+
+    // Handle Date
+    if (obj instanceof Date) {
+        copy = new Date();
+        copy.setTime(obj.getTime());
+        return copy;
+    }
+
+    // Handle Array
+    if (obj instanceof Array) {
+        copy = [];
+        for (var i = 0, len = obj.length; i < len; i++) {
+            copy[i] = deepCopy(obj[i]);
+        }
+        return copy;
+    }
+
+    // Handle Object
+    if (obj instanceof Object) {
+        copy = {};
+        for (var attr in obj) {
+            if (obj.hasOwnProperty(attr)) copy[attr] = deepCopy(obj[attr]);
+        }
+        return copy;
+    }
+
+    throw new Error("Unable to copy obj! Its type isn't supported.");
+}
+
+
+export class LayerNormalization {
+
+  gamma: number[];
+  beta: number[];
+  eps: number;
+  input: number[][];
+  Xhat: number[][];
+  output: number[][];
+  variation: number[];
+  dgamma: number[];
+  dbeta: number[];
+  dX: number[][];
+
+  constructor(width: number){
+    this.gamma = new Array(width);
+    for(let i=0; i<width; i++){
+      this.gamma[i] = 1;
+    }
+    this.beta = new Array(width);
+    for(let i=0; i<width; i++){
+      this.beta[i] = 0;
+    }
+    this.eps = 1e-5;
+  }
+
+  /**
+   *     Input:
+   *     - X: Data of shape (D, N)
+   *     - gamma: Scale parameter of shape (D,)
+   *     - beta: Shift paremeter of shape (D,)
+   *     - ln_param: Dictionary with the following keys:
+   *         - eps: Constant for numeric stability
+   */
+  forward(X: number[][]): number[][] {
+    this.input = deepCopy(X);
+    this.output = deepCopy(X);
+    let D = X.length;
+    let N = X[0].length;
+    let mu = new Array(N);
+    let variation = new Array(N);
+    let Xhat = deepCopy(X);
+    for(let i=0; i<N; i++){
+      // calculate average and variation
+      mu[i] = 0;
+      variation[i] = 0;
+      for(let j=0; j<D; j++){
+        mu[i] += X[j][i];
+      }
+      mu[i] /= D;
+      for(let j=0; j<D; j++){
+        variation[i] += (X[j][i] - mu[i]) * (X[j][i] - mu[i]);
+      }
+      variation[i] = Math.sqrt(variation[i] / D + this.eps);
+      // normalization
+      for(let j=0; j<D; j++){
+        Xhat[j][i] = (X[j][i] - mu[i]) / variation[i];
+        this.output[j][i] = this.gamma[j] * Xhat[j][i] + this.beta[j];
+      }
+    }
+    this.Xhat = deepCopy(Xhat);
+    this.variation = deepCopy(variation);
+    return this.output;
+  }
+
+  // layer normalization back propagation
+  backward(dY: number[][]): number[][]{
+    let D = dY.length;
+    let N = dY[0].length;
+    this.dX = deepCopy(dY);
+    this.dgamma = new Array(D);
+    this.dbeta = new Array(D);
+    for(let j=0; j<D; j++){
+      this.dbeta[j] = 0;
+      this.dgamma[j] = 0;
+      for(let i=0; i<N; i++){
+        this.dbeta[j] += dY[j][i];
+        this.dgamma[j] += dY[j][i] * this.Xhat[j][i];
+      }
+    }
+    for(let i=0; i<N; i++){
+      let sumdXhat = 0;
+      let sumdXhatXhat = 0;
+      for(let k=0; k<D; k++){
+        sumdXhat += (dY[k][i] * this.gamma[k]);
+        sumdXhatXhat += (dY[k][i] * this.gamma[k] * this.Xhat[k][i]);
+      }
+      for(let j=0; j<D; j++){
+        this.dX[j][i] = 1 / (D * this.variation[i]) * (D * dY[j][i] * this.gamma[j] -
+                        this.Xhat[j][i] * sumdXhatXhat - sumdXhat);
+      }
+    }
+    return this.dX;
   }
 }
 
@@ -247,6 +385,24 @@ export class Link {
 }
 
 /**
+ * transpose a matrix
+ * @param matrix the matrix to be transposed
+ */
+export function transpose(matrix: number[][]) : number[][] {
+  let D = matrix.length;
+  let N = matrix[0].length;
+  let output : number[][] = [];
+  for(let i=0; i<N; i++){
+    let vector = new Array(D);
+    for(let j=0; j<D; j++){
+      vector[j] = matrix[j][i];
+    }
+    output.push(vector);
+  }
+  return output;
+}
+
+/**
  * Builds a neural network.
  *
  * @param networkShape The shape of the network. E.g. [1, 2, 3, 1] means
@@ -275,6 +431,10 @@ export function buildNetwork(
     let currentLayer: Node[] = [];
     network.push(currentLayer);
     let numNodes = networkShape[layerIdx];
+    let normlayer : LayerNormalization;
+    if (normalization === 2 && !isInputLayer && !isOutputLayer) {
+      normlayer = new LayerNormalization(numNodes);
+    }
     for (let i = 0; i < numNodes; i++) {
       let nodeId = id.toString();
       if (isInputLayer) {
@@ -284,6 +444,10 @@ export function buildNetwork(
       }
       let node = new Node(nodeId, normalization,
           isOutputLayer ? outputActivation : activation, initZero);
+      // Add the same layer norm to all nodes in one layer.
+      if (normalization === 2) {
+        node.normlayer = normlayer;
+      }
       currentLayer.push(node);
       if (layerIdx >= 1) {
         // Add links from nodes in the previous layer to this node.
@@ -326,10 +490,18 @@ export function forwardProp(network: Node[][], batch: number[][]): number[] {
   }
   for (let layerIdx = 1; layerIdx < network.length; layerIdx++) {
     let currentLayer = network[layerIdx];
+    let outputList : number[][] = [];
+    let normlayer = currentLayer[0].normlayer;
     // Update all the nodes in this layer.
     for (let i = 0; i < currentLayer.length; i++) {
       let node = currentLayer[i];
-      node.updateOutput();
+      let vector = node.updateOutput();
+      if (node.normalization === 2 && layerIdx !== network.length - 1){
+        outputList.push(vector);
+      }
+    }
+    if (outputList.length > 0 && layerIdx !== network.length - 1){
+      normlayer.forward(outputList);
     }
   }
   return network[network.length - 1][0].output;
@@ -356,6 +528,22 @@ export function backProp(network: Node[][], target: number[],
   // Go through the layers backwards.
   for (let layerIdx = network.length - 1; layerIdx >= 1; layerIdx--) {
     let currentLayer = network[layerIdx];
+    // layer normalization backward
+    if (currentLayer[0].normalization === 2 && currentLayer[0].normlayer !== undefined){
+      let normlayer = currentLayer[0].normlayer;
+      let outputDer: number[][] = [];
+      for(let i = 0; i < currentLayer.length; i++) {
+        let node = currentLayer[i];
+        let vector = deepCopy(node.outputDer);
+        outputDer.push(vector);
+      }
+      normlayer.backward(outputDer);
+      for(let i = 0; i < currentLayer.length; i++) {
+        let node = currentLayer[i];
+        let vector = deepCopy(normlayer.dX[i]);
+        node.outputDer = deepCopy(vector);
+      }
+    }
     // Compute the error derivative of each node with respect to:
     // 1) its total input
     // 2) each of its input weights.
@@ -415,6 +603,13 @@ export function updateWeights(network: Node[][], learningRate: number,
     regularizationRate: number, optimization: number, iter: number) {
   for (let layerIdx = 1; layerIdx < network.length; layerIdx++) {
     let currentLayer = network[layerIdx];
+    let normlayer = currentLayer[0].normlayer;
+    if(currentLayer[0].normalization === 2 && normlayer !== undefined){
+      for(let i=0; i<normlayer.gamma.length; i++){
+        normlayer.gamma[i] = normlayer.gamma[i] - learningRate * normlayer.dgamma[i];
+        normlayer.beta[i] = normlayer.beta[i] - learningRate * normlayer.dbeta[i];
+      }
+    }
     for (let i = 0; i < currentLayer.length; i++) {
       let node = currentLayer[i];
       // Update the node's bias.

@@ -52,7 +52,7 @@ export class Node {
   /** Biased second raw moment estimate of bias. */
   v_t = 0;
   /** Normalization layer */
-  normlayer: LayerNormalization;
+  normlayer: NormalizationLayer;
 
   /**
    * Creates a new node with the provided id and activation function.
@@ -162,7 +162,119 @@ function deepCopy(obj) {
 }
 
 
-export class LayerNormalization {
+interface NormalizationLayer{
+  gamma: number[];
+  beta: number[];
+  variation: number[];
+  input: number[][];
+  output: number[][];
+  dgamma: number[];
+  dbeta: number[];
+  dX: number[][];
+
+  forward(X: number[][], mode: string): number[][];
+  backward(dY: number[][]): number[][];
+}
+
+
+export class BatchNormalization implements NormalizationLayer{
+  moving_mean: number[];
+  moving_var: number[];
+  mean: number[];  // batch mean
+  variation: number[];  // batch variation
+  gamma: number[];
+  beta: number[];
+  eps: number;
+  decay: number;
+  Xhat: number[][];
+  input: number[][];
+  output: number[][];
+
+  dgamma: number[];
+  dbeta: number[];
+  dX: number[][];
+
+  constructor(width: number){
+    this.moving_mean = new Array(width);
+    this.moving_var = new Array(width);
+    this.gamma = new Array(width);
+    this.beta = new Array(width);
+    this.eps = 1e-5;
+    this.decay = 0.95;
+
+    for(let i=0; i<width; i++){
+      this.moving_mean[i] = 0;
+      this.moving_var[i] = 0;
+      this.gamma[i] = 1;
+      this.beta[i] = 0;
+    }
+  }
+
+  forward(X: number[][], mode: string): number[][] {
+    this.input = deepCopy(X);
+    this.output = deepCopy(X);
+    let N = X.length;  // batch size
+    let L = X[0].length;  // layer size
+    let mean = new Array[L];
+    let variation = new Array[L];
+    let Xhat = deepCopy(X);
+    for(let i=0; i<L; i++){
+      // calculate mean and variation
+      mean[i] = 0;
+      variation[i] = 0;
+      for(let j=0; j<N; j++){
+        mean[i] += X[j][i];
+      }
+      mean[i] /= N;
+      for(let j=0; j<N; j++){
+        variation[i] += (X[j][i] - mean[i]) * (X[j][i] - mean[i]);
+      }
+      variation[i] = variation[i] / N + this.eps;
+      // normalization
+      for(let j=0; j<N; j++){
+        Xhat[j][i] = (X[j][i] - mean[i]) / Math.sqrt(variation[i]);
+        this.output[j][i] = this.gamma[i] * Xhat[j][i] + this.beta[i];
+      }
+      this.moving_mean[i] = this.decay*this.moving_mean[i] + (1-this.decay)*mean[i];
+      this.moving_var[i] = this.decay*this.moving_var[i] + (1-this.decay)*variation[i];
+    }
+    this.Xhat = deepCopy(Xhat);
+    this.mean = deepCopy(mean);
+    this.variation = deepCopy(variation);
+    return this.output;
+  }
+  backward(dY: number[][]): number[][]{
+    let L = dY.length;
+    let N = dY[0].length;
+    this.dX = deepCopy(dY);
+    this.dgamma = new Array(N);
+    this.dbeta = new Array(N);
+    for(let i=0; i<L; i++){
+      this.dbeta[i] = 0;
+      this.dgamma[i] = 0;
+      for(let j=0; j<N; j++){
+        this.dbeta[i] += dY[i][j];
+        this.dgamma[i] += dY[i][j] * this.Xhat[i][j];
+      }
+    }
+    for(let i=0; i<L; i++){
+      let dvar = 0;
+      let dmean = 0;
+      let k = Math.sqrt(this.variation[i]*this.variation[i]*this.variation[i]);
+      for(let j=0; j<N; j++){
+        dvar += dY[i][j]*this.gamma[i]*(this.input[j][i]-this.mean[j])*-0.5/k;
+        dmean += -dY[i][j]*this.gamma[i] / Math.sqrt(this.variation[i])
+      }
+      for(let j=0; j<N; j++){
+        this.dX[i][j] += dY[i][j]*this.gamma[i]/Math.sqrt(this.variation[i])+dvar*2*(this.input[j][i]-this.mean[j])/N+dmean/N;
+      }
+    }
+    return this.dX;
+  }
+}
+
+
+export class LayerNormalization implements NormalizationLayer{
 
   gamma: number[];
   beta: number[];
@@ -195,7 +307,7 @@ export class LayerNormalization {
    *     - ln_param: Dictionary with the following keys:
    *         - eps: Constant for numeric stability
    */
-  forward(X: number[][]): number[][] {
+  forward(X: number[][], mode: string): number[][] {
     this.input = deepCopy(X);
     this.output = deepCopy(X);
     let D = X.length;
@@ -431,7 +543,10 @@ export function buildNetwork(
     let currentLayer: Node[] = [];
     network.push(currentLayer);
     let numNodes = networkShape[layerIdx];
-    let normlayer : LayerNormalization;
+    let normlayer: NormalizationLayer;
+    if (normalization === 1 && !isInputLayer && !isOutputLayer) {
+      normlayer = new BatchNormalization(numNodes);
+    }
     if (normalization === 2 && !isInputLayer && !isOutputLayer) {
       normlayer = new LayerNormalization(numNodes);
     }
@@ -445,7 +560,7 @@ export function buildNetwork(
       let node = new Node(nodeId, normalization,
           isOutputLayer ? outputActivation : activation, initZero);
       // Add the same layer norm to all nodes in one layer.
-      if (normalization === 2) {
+      if (normalization !== 0) {
         node.normlayer = normlayer;
       }
       currentLayer.push(node);
@@ -469,11 +584,12 @@ export function buildNetwork(
  * total input and output of each node in the network.
  *
  * @param network The neural network.
- * @param inputs The input array. Its length should match the number of input
+ * @param batch The input array. Its length should match the number of input
  *     nodes in the network.
+ * @param mode Set for Batch Normalization. Choose from 'train' and 'eval'.
  * @return The final output of the network.
  */
-export function forwardProp(network: Node[][], batch: number[][]): number[] {
+export function forwardProp(network: Node[][], batch: number[][], mode: string): number[] {
   let inputLayer = network[0];
   if (batch[0].length !== inputLayer.length) {
     throw new Error("The number of inputs must match the number of nodes in" +
@@ -501,7 +617,7 @@ export function forwardProp(network: Node[][], batch: number[][]): number[] {
       }
     }
     if (outputList.length > 0 && layerIdx !== network.length - 1){
-      normlayer.forward(outputList);
+      normlayer.forward(outputList, mode);
     }
   }
   return network[network.length - 1][0].output;
@@ -528,8 +644,9 @@ export function backProp(network: Node[][], target: number[],
   // Go through the layers backwards.
   for (let layerIdx = network.length - 1; layerIdx >= 1; layerIdx--) {
     let currentLayer = network[layerIdx];
-    // layer normalization backward
-    if (currentLayer[0].normalization === 2 && currentLayer[0].normlayer !== undefined){
+    // Normalization layer backward
+    // if (currentLayer[0].normalization === 2 && currentLayer[0].normlayer !== null){
+    if (currentLayer[0].normalization !== 0 && currentLayer[0].normlayer !== undefined){
       let normlayer = currentLayer[0].normlayer;
       let outputDer: number[][] = [];
       for(let i = 0; i < currentLayer.length; i++) {
@@ -604,7 +721,7 @@ export function updateWeights(network: Node[][], learningRate: number,
   for (let layerIdx = 1; layerIdx < network.length; layerIdx++) {
     let currentLayer = network[layerIdx];
     let normlayer = currentLayer[0].normlayer;
-    if(currentLayer[0].normalization === 2 && normlayer !== undefined){
+    if(currentLayer[0].normalization !== 0 && normlayer !== undefined){
       for(let i=0; i<normlayer.gamma.length; i++){
         normlayer.gamma[i] = normlayer.gamma[i] - learningRate * normlayer.dgamma[i];
         normlayer.beta[i] = normlayer.beta[i] - learningRate * normlayer.dbeta[i];

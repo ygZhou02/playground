@@ -76,7 +76,7 @@ export class Node {
       this.totalInput[i] = this.bias;
       for (let j = 0; j < this.inputLinks.length; j++) {
         let link = this.inputLinks[j];
-        if (this.normalization === 2 && link.source.normlayer !== undefined) {
+        if (this.normalization !== 0 && link.source.normlayer !== undefined) {
           this.totalInput[i] += link.weight * link.source.normlayer.output[j][i];
         }
         else{
@@ -213,27 +213,36 @@ export class BatchNormalization implements NormalizationLayer{
   forward(X: number[][], mode: string): number[][] {
     this.input = deepCopy(X);
     this.output = deepCopy(X);
-    let N = X.length;  // batch size
-    let L = X[0].length;  // layer size
-    let mean = new Array[L];
-    let variation = new Array[L];
     let Xhat = deepCopy(X);
+    let L = X.length;  // layer size
+    let N = X[0].length;  // batch size
+    let mean = new Array(L);
+    let variation = new Array(L);
+    if(mode === 'eval'){
+      for(let i=0; i<L; i++){
+        for(let j=0; j<N; j++){
+          Xhat[i][j] = (X[i][j] - this.moving_mean[i]) / Math.sqrt(this.moving_var[i]+this.eps);
+          this.output[i][j] = this.gamma[i] * Xhat[i][j] + this.beta[i];
+        }
+      }
+      return this.output
+    }
     for(let i=0; i<L; i++){
       // calculate mean and variation
       mean[i] = 0;
       variation[i] = 0;
       for(let j=0; j<N; j++){
-        mean[i] += X[j][i];
+        mean[i] += X[i][j];
       }
       mean[i] /= N;
       for(let j=0; j<N; j++){
-        variation[i] += (X[j][i] - mean[i]) * (X[j][i] - mean[i]);
+        variation[i] += (X[i][j] - mean[i]) * (X[i][j] - mean[i]);
       }
-      variation[i] = variation[i] / N + this.eps;
+      variation[i] = variation[i] / N;
       // normalization
       for(let j=0; j<N; j++){
-        Xhat[j][i] = (X[j][i] - mean[i]) / Math.sqrt(variation[i]);
-        this.output[j][i] = this.gamma[i] * Xhat[j][i] + this.beta[i];
+        Xhat[i][j] = (X[i][j] - mean[i]) / Math.sqrt(variation[i]+this.eps);
+        this.output[i][j] = this.gamma[i] * Xhat[i][j] + this.beta[i];
       }
       this.moving_mean[i] = this.decay*this.moving_mean[i] + (1-this.decay)*mean[i];
       this.moving_var[i] = this.decay*this.moving_var[i] + (1-this.decay)*variation[i];
@@ -260,13 +269,13 @@ export class BatchNormalization implements NormalizationLayer{
     for(let i=0; i<L; i++){
       let dvar = 0;
       let dmean = 0;
-      let k = Math.sqrt(this.variation[i]*this.variation[i]*this.variation[i]);
+      let k = Math.sqrt((this.variation[i]+this.eps)*(this.variation[i]+this.eps)*(this.variation[i]+this.eps));
       for(let j=0; j<N; j++){
-        dvar += dY[i][j]*this.gamma[i]*(this.input[j][i]-this.mean[j])*-0.5/k;
-        dmean += -dY[i][j]*this.gamma[i] / Math.sqrt(this.variation[i])
+        dvar += dY[i][j]*this.gamma[i]*(this.input[i][j]-this.mean[i])*-0.5/k;
+        dmean += -dY[i][j]*this.gamma[i] / Math.sqrt(this.variation[i]+this.eps)
       }
       for(let j=0; j<N; j++){
-        this.dX[i][j] += dY[i][j]*this.gamma[i]/Math.sqrt(this.variation[i])+dvar*2*(this.input[j][i]-this.mean[j])/N+dmean/N;
+        this.dX[i][j] += dY[i][j]*this.gamma[i]/Math.sqrt(this.variation[i]+this.eps)+dvar*2*(this.input[i][j]-this.mean[i])/N+dmean/N;
       }
     }
     return this.dX;
@@ -560,7 +569,7 @@ export function buildNetwork(
       let node = new Node(nodeId, normalization,
           isOutputLayer ? outputActivation : activation, initZero);
       // Add the same layer norm to all nodes in one layer.
-      if (normalization !== 0) {
+      if (normalization !== 0 && !isInputLayer && !isOutputLayer) {
         node.normlayer = normlayer;
       }
       currentLayer.push(node);
@@ -612,7 +621,7 @@ export function forwardProp(network: Node[][], batch: number[][], mode: string):
     for (let i = 0; i < currentLayer.length; i++) {
       let node = currentLayer[i];
       let vector = node.updateOutput();
-      if (node.normalization === 2 && layerIdx !== network.length - 1){
+      if (node.normalization !== 0 && layerIdx !== network.length - 1){
         outputList.push(vector);
       }
     }
@@ -657,8 +666,8 @@ export function backProp(network: Node[][], target: number[],
       normlayer.backward(outputDer);
       for(let i = 0; i < currentLayer.length; i++) {
         let node = currentLayer[i];
-        let vector = deepCopy(normlayer.dX[i]);
-        node.outputDer = deepCopy(vector);
+        // let vector = deepCopy(normlayer.dX[i]);
+        node.outputDer = deepCopy(normlayer.dX[i]);
       }
     }
     // Compute the error derivative of each node with respect to:

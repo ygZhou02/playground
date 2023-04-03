@@ -340,6 +340,8 @@ function makeGUI() {
 
   let normalization = d3.select("#normalization").on("change", function() {
     state.normalization = +this.value;
+    state.serialize();
+    userHasInteracted();
     parametersChanged = true;
     reset();
   });

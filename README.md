@@ -11,11 +11,32 @@ and then add a new option in controlling string `activations` in [state.ts](src/
 In this way, we establish a data connection between User Interface and typescript code. 
 If the user choose `leaky ReLU` in `activations` box, this change will inform the ts code that the network state is changed and the whole network will be re-built.
 
+## Data flow
+
+Data flow includes training mode and inference mode, and the latter is responsible for the fantastic decision boundary visualization. However, in this chapter we focus on the data flow in neural network training. The main code file concerning network training is [nn.ts](src/nn.ts).
+
+First, training and testing dataset is created in [dataset.ts](src/dataset.ts). Via random choice, training data is selected in function oneStep() in [playground.ts](src/playground.ts) and passed to network training functions.
+In order to achieve batch-based operation, we modify the data flow to a "batch-based" framework--all the data pass in and out every training function is a batch of data.
+This modification adds complexity to our data processing in each function, but this is a crucial step to achieve batch normalization.
+
+The training data then follow the sequence of forward propagation, back propagation and weight update. forwardProp() revokes node function to propagate the input data up to the bottom of the network.
+backProp() calculates the derivative of the loss function, and back-propagate this derivative to the first layer and links.
+updateWeights() updates the weights in links and the biases in nodes based on optimizer and its learning rate.
+
 ## Normalizations
 
 Following the interface part, we create a controlling variable `normalization` in [state.ts](src/state.ts).
+This variable includes 3 values: 0 for no normalization, 1 for batch normalization, and 2 for layer normalization. If this controlling variable is changed, the whole network will be reformed and a new kind of normalization layer will be inserted in the network.
+
+We create an interface NormalizationLayer, which contains two implements: BatchNormalization and LayerNormalization.
+
 
 ### Layer normalization
+
+A layer normalization layer take an input vector of shape (D, N), where D stands for the number of nodes in a layer, N stands for batch size.
+
+$$ a_2 $$
+
 
 ### Batch normalization
 
@@ -27,7 +48,7 @@ Following the interface part, we create a controlling variable `normalization` i
 
 Optimizer
 
-Below part follows the original [readme.md](https://github.com/tensorflow/playground/blob/master/README.md) in tensorflow playground.
+Below follows the original [readme.md](https://github.com/tensorflow/playground/blob/master/README.md) in tensorflow playground.
 
 ## Development
 

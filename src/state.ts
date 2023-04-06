@@ -90,11 +90,6 @@ export enum Problem {
   REGRESSION
 }
 
-export enum Norm {
-  NONE,
-  BATCHNORM
-}
-
 export let problems = {
   "classification": Problem.CLASSIFICATION,
   "regression": Problem.REGRESSION

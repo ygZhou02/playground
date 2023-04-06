@@ -1,10 +1,33 @@
-# Deep playground
+# Deep playground plus
 
-Deep playground is an interactive visualization of neural networks, written in
-TypeScript using d3.js. We use GitHub issues for tracking new requests and bugs.
-Your feedback is highly appreciated!
+We add functions on [tensorflow playground project](https://github.com/tensorflow/playground), including various normalizations, optimizers and initializations. Below are brief introduction about how we build up these functions.
 
-**If you'd like to contribute, be sure to review the [contribution guidelines](CONTRIBUTING.md).**
+## Interface
+
+Firstly we should update the original interface to demonstrate controlling boxes of below functions.
+This can be modified in [index.html](index.html) via adding controlling UI classes and assign value to controlling variable.
+For example, in order to create a new activation function leaky ReLU, we firstly declare it in [index.html](index.html),
+and then add a new option in controlling string `activations` in [state.ts](src/state.ts). 
+In this way, we establish a data connection between User Interface and typescript code. 
+If the user choose `leaky ReLU` in `activations` box, this change will inform the ts code that the network state is changed and the whole network will be re-built.
+
+## Normalizations
+
+Following the interface part, we create a controlling variable `normalization` in [state.ts](src/state.ts).
+
+### Layer normalization
+
+### Batch normalization
+
+## Optimizer
+
+### Stochastic gradient descent (SGD)
+
+### Adam
+
+Optimizer
+
+Below part follows the original [readme.md](https://github.com/tensorflow/playground/blob/master/README.md) in tensorflow playground.
 
 ## Development
 
@@ -19,5 +42,3 @@ HTML and CSS files whenever they change.
 
 ## For owners
 To push to production: `git subtree push --prefix dist origin gh-pages`.
-
-This is not an official Google product.

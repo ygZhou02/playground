@@ -85,6 +85,7 @@ let HIDABLE_CONTROLS = [
   ["Regularization rate", "regularizationRate"],
   ["Problem type", "problem"],
   ["Normalization", "normalization"],
+  ["Initialization", "initialization"],
   ["Which dataset", "dataset"],
   ["Ratio train data", "percTrainData"],
   ["Noise level", "noise"],
@@ -346,6 +347,16 @@ function makeGUI() {
     reset();
   });
   normalization.property("value", state.normalization);
+
+  let initialization = d3.select("#initialization").on("change", function() {
+    state.initialization = +this.value;
+    state.initZero = +this.value;
+    state.serialize();
+    userHasInteracted();
+    parametersChanged = true;
+    reset();
+  });
+  initialization.property("value", state.ninitialization);
 
   let learningRate = d3.select("#learningRate").on("change", function() {
     state.learningRate = +this.value;
@@ -988,7 +999,7 @@ function reset(onStartup=false) {
   let shape = [numInputs].concat(state.networkShape).concat([1]);
   let outputActivation = (state.problem === Problem.REGRESSION) ?
       nn.Activations.LINEAR : nn.Activations.TANH;
-  network = nn.buildNetwork(shape, state.normalization, state.activation, outputActivation,
+  network = nn.buildNetwork(shape, state.normalization, state.initialization, state.activation, outputActivation,
       state.regularization, constructInputIds(), state.initZero);
   lossTrain = getLoss(network, trainData);
   lossTest = getLoss(network, testData);

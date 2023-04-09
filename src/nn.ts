@@ -494,13 +494,17 @@ export class Link {
    *     penalty for this weight. If null, there will be no regularization.
    */
   constructor(source: Node, dest: Node,
-      regularization: RegularizationFunction, initZero?: boolean) {
+      regularization: RegularizationFunction, weight: number, initZero?: number) {
     this.id = source.id + "-" + dest.id;
     this.source = source;
     this.dest = dest;
     this.regularization = regularization;
-    if (initZero) {
+    if (initZero === 0) {
       this.weight = 0;
+    }
+    else if(initZero === 1) {
+      //Xavier Uniform
+      this.weight = weight;
     }
   }
 }
@@ -537,10 +541,10 @@ export function transpose(matrix: number[][]) : number[][] {
  * @param inputIds List of ids for the input nodes.
  */
 export function buildNetwork(
-    networkShape: number[], normalization: number, activation: ActivationFunction,
+    networkShape: number[], normalization: number, initialization: number, activation: ActivationFunction,
     outputActivation: ActivationFunction,
     regularization: RegularizationFunction,
-    inputIds: string[], initZero?: boolean): Node[][] {
+    inputIds: string[], initZero?: number): Node[][] {
   let numLayers = networkShape.length;
   console.log(networkShape)
   let id = 1;
@@ -567,7 +571,7 @@ export function buildNetwork(
         id++;
       }
       let node = new Node(nodeId, normalization,
-          isOutputLayer ? outputActivation : activation, initZero);
+          isOutputLayer ? outputActivation : activation, true);
       // Add the same layer norm to all nodes in one layer.
       if (normalization !== 0 && !isInputLayer && !isOutputLayer) {
         node.normlayer = normlayer;
@@ -577,7 +581,36 @@ export function buildNetwork(
         // Add links from nodes in the previous layer to this node.
         for (let j = 0; j < network[layerIdx - 1].length; j++) {
           let prevNode = network[layerIdx - 1][j];
-          let link = new Link(prevNode, node, regularization, initZero);
+          let weight = 0;
+          if (initialization === 1) {
+            weight = Math.random() - 0.5
+          }
+          else if (initialization === 2) {
+            // Xavier Uniform
+            if (activation === Activations.SIGMOID) {
+              weight = 2 * (Math.random() - 0.5) * (Math.sqrt(6 / (networkShape[layerIdx - 1] + networkShape[layerIdx])));
+            }
+            else if (activation === Activations.RELU || activation === Activations.LEAKYRELU || activation === Activations.LINEAR) {
+              weight = 2 * (Math.random() - 0.5) * (Math.sqrt(6 * 2 / (networkShape[layerIdx - 1] + networkShape[layerIdx])));
+            }
+            else if (activation === Activations.TANH) {
+              weight = 2 * (Math.random() - 0.5) * (Math.sqrt(6 * 16 / (networkShape[layerIdx - 1] + networkShape[layerIdx])));
+            }
+          }
+          // Xavier Gaussian is too hard! Uniform should be transformed to Gaussian, and then transformed to Gaussian with another variance!
+          else if (initialization === 3) {
+            // Kaiming Uniform
+            if (activation === Activations.SIGMOID) {
+              weight = 2 * (Math.random() - 0.5) * (Math.sqrt(6 / (networkShape[layerIdx - 1])));
+            }
+            else if (activation === Activations.RELU || activation === Activations.LEAKYRELU || activation === Activations.LINEAR) {
+              weight = 2 * (Math.random() - 0.5) * (Math.sqrt(6 * 2 / (networkShape[layerIdx - 1])));
+            }
+            else if (activation === Activations.TANH) {
+              weight = 2 * (Math.random() - 0.5) * (Math.sqrt(6 * 16 / (networkShape[layerIdx - 1])));
+            }
+          }
+          let link = new Link(prevNode, node, regularization, weight, initZero);
           prevNode.outputs.push(link);
           node.inputLinks.push(link);
         }

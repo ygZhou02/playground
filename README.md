@@ -19,9 +19,10 @@ First, training and testing dataset is created in [dataset.ts](src/dataset.ts). 
 In order to achieve batch-based operation, we modify the data flow to a "batch-based" framework--all the data pass in and out every training function is a batch of data.
 This modification adds complexity to our data processing in each function, but this is a crucial step to achieve batch normalization.
 
-The training data then follow the sequence of forward propagation, back propagation and weight update. forwardProp() revokes node function to propagate the input data up to the bottom of the network.
-backProp() calculates the derivative of the loss function, and back-propagate this derivative to the first layer and links.
-updateWeights() updates the weights in links and the biases in nodes based on optimizer and its learning rate.
+The training data then follow the sequence of forward propagation, back propagation and weight update. 
+- forwardProp() revokes node function to propagate the input data up to the bottom of the network.
+- backProp() calculates the derivative of the loss function, and back-propagate this derivative to the first layer and links.
+- updateWeights() updates the weights in links and the biases in nodes based on optimizer and its learning rate.
 
 ## Normalizations
 
@@ -34,15 +35,28 @@ We create an interface NormalizationLayer, which contains two implements: BatchN
 ### Layer normalization
 
 A layer normalization layer take an input vector of shape (D, N), where D stands for the number of nodes in a layer, N stands for batch size.
+In the forward function, this layer normalizes the input vector in the first dimension and implement a neuron by neuron affine transformation; in the backward function, this layer calculates the derivatives of affine layer, and then passes its derivative to former layer.
+
+TODO:加入原理分析，公式排上去
 
 $$ a_2 $$
 
 
+Detailed implementation can be found in class LayerNormalization in [nn.ts](src/nn.ts).
+
+
+
 ### Batch normalization
+
+
 
 ## Optimizer
 
+We build 2 classic optimizer: SGD and Adam (to be continued).
+
 ### Stochastic gradient descent (SGD)
+
+Based on random selected batch, SGD can be easily built. 
 
 ### Adam
 

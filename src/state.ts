@@ -132,7 +132,8 @@ export class State {
     {name: "tutorial", type: Type.STRING},
     {name: "problem", type: Type.OBJECT, keyMap: problems},
     {name: "normalization", type: Type.NUMBER},
-    {name: "initZero", type: Type.BOOLEAN},
+    {name: "initialization", type: Type.NUMBER},
+    {name: "initZero", type: Type.NUMBER},
     {name: "hideText", type: Type.BOOLEAN}
   ];
 
@@ -150,7 +151,8 @@ export class State {
   regularization: nn.RegularizationFunction = null;
   problem = Problem.CLASSIFICATION;
   normalization = 0;
-  initZero = false;
+  initialization = 0;
+  initZero = 0;
   hideText = false;
   collectStats = false;
   numHiddenLayers = 1;

@@ -959,10 +959,11 @@ function oneStep(): void {
   lossTrain = getLoss(network, trainData);
   lossTest = getLoss(network, testData);
   // console.log(lossTrain, lossTest)
-  if (lossTest < 0.02 && lossTest > 0.019) {
+  // if (lossTest <= 0.1) {
+  //   player.pause();
   // When lossTest == 0.02, show the current iteration, which symbolizes how fast the network converges.
-    console.log(iter);
-  }
+  //   console.log(iter);
+  // }
   updateUI();
 }
 

@@ -94,29 +94,64 @@ class Optimizer {
   private static SGD(param: any, lr: number){
     if (param instanceof Node)
       param.bias -= lr * param.accInputDer / param.numAccumulatedDers;
-    else
+    else if (param instanceof Link)
       param.weight -= lr * param.accErrorDer / param.numAccumulatedDers;
+    else {
+      for (let i=0; i<param.gamma.length; i++){
+        param.gamma[i] -= lr * param.dgamma[i];
+        param.beta[i] -= lr * param.dbeta[i];
+      }
+    }
   }
 
   private static Adam(param: any, lr: number, iter: number){
     let beta1 = 0.9;
     let beta2 = 0.999;
     let g: number;
+    let layer_size: number;
     let m_hat: number;
     let v_hat: number;
 
     if (param instanceof Node)
       g = param.accInputDer / param.numAccumulatedDers;
-    else
+    else if (param instanceof Link)
       g = param.accErrorDer / param.numAccumulatedDers;
-    param.m_t = beta1 * param.m_t + (1 - beta1) * g;
-    param.v_t = beta2 * param.v_t + (1 - beta2) * g * g;
-    m_hat = param.m_t / (1 - Math.pow(beta1, iter));
-    v_hat = param.v_t / (1 - Math.pow(beta2, iter));
-    if (param instanceof Node)
+    else{
+      layer_size = param.gamma.length;
+    }
+    
+    if (param instanceof Node){
+      param.m_t = beta1 * param.m_t + (1 - beta1) * g;
+      param.v_t = beta2 * param.v_t + (1 - beta2) * g * g;
+      m_hat = param.m_t / (1 - Math.pow(beta1, iter));
+      v_hat = param.v_t / (1 - Math.pow(beta2, iter));
       param.bias -= lr * m_hat / (Math.pow(v_hat, 0.5) + 1e-8);
-    else
+    }
+    else if (param instanceof Link){
+      param.m_t = beta1 * param.m_t + (1 - beta1) * g;
+      param.v_t = beta2 * param.v_t + (1 - beta2) * g * g;
+      m_hat = param.m_t / (1 - Math.pow(beta1, iter));
+      v_hat = param.v_t / (1 - Math.pow(beta2, iter));
       param.weight -= lr * m_hat / (Math.pow(v_hat, 0.5) + 1e-8);
+    }
+    else {
+      for (let i=0; i<layer_size; i++){
+        // update gamma
+        g = param.dgamma[i];
+        param.m_t_gamma[i] = beta1 * param.m_t_gamma[i] + (1 - beta1) * g;
+        param.v_t_gamma[i] = beta2 * param.v_t_gamma[i] + (1 - beta2) * g * g;
+        m_hat = param.m_t_gamma[i] / (1 - Math.pow(beta1, iter));
+        v_hat = param.v_t_gamma[i] / (1 - Math.pow(beta2, iter));
+        param.gamma[i] -= lr * m_hat / (Math.pow(v_hat, 0.5) + 1e-8);
+        // update beta
+        g = param.dbeta[i];
+        param.m_t_beta[i] = beta1 * param.m_t_beta[i] + (1 - beta1) * g;
+        param.v_t_beta[i] = beta2 * param.v_t_beta[i] + (1 - beta2) * g * g;
+        m_hat = param.m_t_beta[i] / (1 - Math.pow(beta1, iter));
+        v_hat = param.v_t_beta[i] / (1 - Math.pow(beta2, iter));
+        param.beta[i] -= lr * m_hat / (Math.pow(v_hat, 0.5) + 1e-8);
+      }
+    }
   }
 
   public static step(optimizer_id: number, param: any, lr: number, iter: number){
@@ -172,6 +207,11 @@ interface NormalizationLayer{
   dbeta: number[];
   dX: number[][];
 
+  m_t_gamma: number[];
+  m_t_beta: number[];
+  v_t_gamma: number[];
+  v_t_beta: number[];
+
   forward(X: number[][], mode: string): number[][];
   backward(dY: number[][]): number[][];
 }
@@ -190,6 +230,11 @@ export class BatchNormalization implements NormalizationLayer{
   input: number[][];
   output: number[][];
 
+  m_t_gamma: number[];
+  m_t_beta: number[];
+  v_t_gamma: number[];
+  v_t_beta: number[];
+
   dgamma: number[];
   dbeta: number[];
   dX: number[][];
@@ -201,12 +246,20 @@ export class BatchNormalization implements NormalizationLayer{
     this.beta = new Array(width);
     this.eps = 1e-5;
     this.decay = 0.95;
+    this.m_t_gamma = new Array(width);
+    this.m_t_beta = new Array(width);
+    this.v_t_gamma = new Array(width);
+    this.v_t_beta = new Array(width);
 
     for(let i=0; i<width; i++){
       this.moving_mean[i] = 0;
       this.moving_var[i] = 0;
       this.gamma[i] = 1;
       this.beta[i] = 0;
+      this.m_t_gamma[i] = 0;
+      this.m_t_beta[i] = 0;
+      this.v_t_gamma[i] = 0;
+      this.v_t_beta[i] = 0;
     }
   }
 
@@ -296,16 +349,27 @@ export class LayerNormalization implements NormalizationLayer{
   dbeta: number[];
   dX: number[][];
 
+  m_t_gamma: number[];
+  m_t_beta: number[];
+  v_t_gamma: number[];
+  v_t_beta: number[];
+
   constructor(width: number){
     this.gamma = new Array(width);
+    this.beta = new Array(width);
+    this.m_t_gamma = new Array(width);
+    this.m_t_beta = new Array(width);
+    this.v_t_gamma = new Array(width);
+    this.v_t_beta = new Array(width);
+    this.eps = 1e-5;
     for(let i=0; i<width; i++){
       this.gamma[i] = 1;
-    }
-    this.beta = new Array(width);
-    for(let i=0; i<width; i++){
       this.beta[i] = 0;
+      this.m_t_gamma[i] = 0;
+      this.m_t_beta[i] = 0;
+      this.v_t_gamma[i] = 0;
+      this.v_t_beta[i] = 0;
     }
-    this.eps = 1e-5;
   }
 
   /**
@@ -764,10 +828,11 @@ export function updateWeights(network: Node[][], learningRate: number,
     let currentLayer = network[layerIdx];
     let normlayer = currentLayer[0].normlayer;
     if(currentLayer[0].normalization !== 0 && normlayer !== undefined){
-      for(let i=0; i<normlayer.gamma.length; i++){
-        normlayer.gamma[i] = normlayer.gamma[i] - learningRate * normlayer.dgamma[i];
-        normlayer.beta[i] = normlayer.beta[i] - learningRate * normlayer.dbeta[i];
-      }
+      Optimizer.step(optimization, normlayer, learningRate, iter);
+      // for(let i=0; i<normlayer.gamma.length; i++){
+      //   normlayer.gamma[i] = normlayer.gamma[i] - learningRate * normlayer.dgamma[i];
+      //   normlayer.beta[i] = normlayer.beta[i] - learningRate * normlayer.dbeta[i];
+      // }
     }
     for (let i = 0; i < currentLayer.length; i++) {
       let node = currentLayer[i];
